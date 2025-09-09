@@ -33,20 +33,20 @@ const CONFIG = {
   
   // Configuración de servicios (adaptable según negocio)
   SERVICES: JSON.parse(process.env.SERVICES || JSON.stringify([
-    { id: 'instalacion', name: 'Instalación de llantas', duration: 60 },
-    { id: 'balanceo', name: 'Balanceo', duration: 30 },
-    { id: 'alineacion', name: 'Alineación', duration: 45 },
-    { id: 'cambio_aceite', name: 'Cambio de aceite', duration: 30 }
+    { id: 'Cita', name: 'Cita con cliente', duration: 60 },
+    { id: 'Llamada', name: 'llamada con cliente', duration: 30 }
   ])),
   
   // Campos personalizables del formulario
   FORM_FIELDS: JSON.parse(process.env.FORM_FIELDS || JSON.stringify([
     { name: 'nombre', required: true, type: 'string', label: 'Nombre completo' },
     { name: 'telefono', required: true, type: 'phone', label: 'Teléfono' },
-    { name: 'email', required: false, type: 'email', label: 'Email' },
-    { name: 'servicio', required: true, type: 'select', label: 'Servicio', options: 'SERVICES' },
-    { name: 'vehiculo', required: false, type: 'string', label: 'Vehículo (marca/modelo)' },
-    { name: 'notas', required: false, type: 'text', label: 'Notas adicionales' }
+    { name: 'Industria', required: true, type: 'string', label: 'Industria' },
+    { name: 'Solicitudes', required: true, type: 'number', label: 'Solicitudes por semana', options: 'SERVICES' },
+    { name: 'Empleados', required: true, type: 'number', label: 'Numero de empleados' },
+    { name: 'Fecha', required: true, type: 'date', label: 'Fecha de la reunion' },
+    {name:'Servicio', requiered:true, type:'text',label:'Tipo de reunion'},
+    { name: 'notas',required:false, type: 'text', label:'Notas adicionales' }
   ]))
 };
 
