@@ -23,8 +23,8 @@ const GOOGLE_SHEETS_CREDENTIALS = {
   "universe_domain": "googleapis.com"
 };
 
-const SHEET_ID_CITAS = process.env.SHEET_ID_CITAS; // ID de tu hoja de cálculo para citas
-const SHEET_NAME_CITAS = process.env.SHEET_NAME_CITAS || 'Citas'; // Nombre de la hoja donde se guardarán las citas
+const SHEET_ID_CITAS = process.env.SHEET_ID_CITAS;
+const SHEET_NAME_CITAS = process.env.SHEET_NAME_CITAS || 'Citas';
 
 const auth = new google.auth.GoogleAuth({
   credentials: GOOGLE_SHEETS_CREDENTIALS,
@@ -33,10 +33,6 @@ const auth = new google.auth.GoogleAuth({
 
 // --- Helpers de Google Sheets ---
 
-/**
- * Obtiene todas las citas existentes de la hoja de cálculo.
- * @returns {Promise<Array<Array<string>>>} Una promesa que resuelve a un array de filas.
- */
 async function obtenerCitas() {
   try {
     const client = await auth.getClient();
@@ -44,25 +40,17 @@ async function obtenerCitas() {
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID_CITAS,
-      range: `${SHEET_NAME_CITAS}!A:I`, // Lee todas las columnas que usaremos
+      range: `${SHEET_NAME_CITAS}!A:J`, // Ajustado a 10 columnas
     });
 
     const rows = response.data.values || [];
-    // Omitimos la primera fila (encabezados) si existe
     return rows.length > 1 ? rows.slice(1) : [];
   } catch (error) {
     console.error('Error al leer las citas de la hoja:', error);
-    // Si la hoja no existe o hay otro error, devolvemos un array vacío para no bloquear el sistema
     return [];
   }
 }
 
-
-/**
- * Agrega una nueva fila (cita) a la hoja de cálculo.
- * @param {Array<string>} valores Los valores de la nueva cita.
- * @returns {Promise<boolean>} True si se agregó correctamente, de lo contrario false.
- */
 async function agregarFila(valores) {
     try {
         const client = await auth.getClient();
@@ -70,7 +58,7 @@ async function agregarFila(valores) {
 
         await sheets.spreadsheets.values.append({
             spreadsheetId: SHEET_ID_CITAS,
-            range: `${SHEET_NAME_CITAS}!A:I`, // Ajustado al número de columnas
+            range: `${SHEET_NAME_CITAS}!A:J`, // Ajustado a 10 columnas
             valueInputOption: "USER_ENTERED",
             insertDataOption: "INSERT_ROWS",
             requestBody: {
@@ -85,7 +73,6 @@ async function agregarFila(valores) {
     }
 }
 
-
 // --- Middlewares ---
 app.use(helmet());
 app.use(cors());
@@ -93,29 +80,24 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
+  windowMs: 15 * 60 * 1000,
   max: 100,
   message: 'Demasiadas solicitudes desde esta IP, por favor intente más tarde.'
 });
 app.use(limiter);
-
 
 // --- Rutas de la API ---
 
 app.get('/', (req, res) => {
     res.json({
       message: 'API de Agendamiento de Citas',
-      version: '1.0.0',
+      version: '1.1.0',
       endpoints: {
         '/api/citas/agendar': 'POST - Crea una nueva cita, verificando disponibilidad.'
       }
     });
 });
 
-/**
- * Endpoint para agendar una nueva cita.
- * Verifica la disponibilidad y, si está ocupado, sugiere nuevos horarios.
- */
 app.post('/api/citas/agendar', async (req, res) => {
   try {
     const {
@@ -124,13 +106,12 @@ app.post('/api/citas/agendar', async (req, res) => {
         industria,
         solicitudes,
         empleados,
-        fecha, // Formato esperado: YYYY-MM-DD
-        hora,  // Formato esperado: HH:MM (en sistema de 24h)
-        servicio, // "Cita" o "Llamada"
+        fecha,
+        hora,
+        servicio,
         notas
     } = req.body;
 
-    // Validación de campos esenciales
     if (!nombre || !fecha || !hora || !servicio) {
       return res.status(400).json({
         estado: 'error',
@@ -145,12 +126,11 @@ app.post('/api/citas/agendar', async (req, res) => {
     const citasExistentes = await obtenerCitas();
     let hayConflicto = false;
 
-    // Verificar si el horario solicitado se superpone con una cita existente
     for (const cita of citasExistentes) {
-        // Asumiendo que la fecha está en la columna F (índice 5) y la hora en G (índice 6)
-        const fechaExistente = cita[5];
-        const horaExistente = cita[6];
-        const servicioExistente = cita[7];
+        // Asumiendo que ahora la fecha está en la columna G (índice 6) y la hora en H (índice 7)
+        const fechaExistente = cita[6];
+        const horaExistente = cita[7];
+        const servicioExistente = cita[8];
 
         if (!fechaExistente || !horaExistente || !servicioExistente) continue;
 
@@ -158,16 +138,18 @@ app.post('/api/citas/agendar', async (req, res) => {
         const inicioExistente = new Date(`${fechaExistente}T${horaExistente}:00`);
         const finExistente = new Date(inicioExistente.getTime() + duracionExistente * 60000);
 
-        // Lógica de superposición de rangos: (InicioA < FinB) y (FinA > InicioB)
         if (fechaHoraSolicitada < finExistente && fechaHoraFinSolicitada > inicioExistente) {
             hayConflicto = true;
             break;
         }
     }
     
-    // Si no hay conflicto, agendar la cita
     if (!hayConflicto) {
+        // 1. Generar ID único para la cita
+        const idCita = `APT-${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
+
         const nuevaFila = [
+            idCita,
             nombre,
             telefono || '',
             industria || '',
@@ -182,10 +164,31 @@ app.post('/api/citas/agendar', async (req, res) => {
         const exito = await agregarFila(nuevaFila);
 
         if (exito) {
+            // 2. Construir el objeto de respuesta en el formato solicitado
+            const raw = {
+              appointmentDetails: {
+                nombre: nombre,
+                telefono: telefono || '',
+                industria: industria || '',
+                solicitudes: solicitudes || null,
+                empleados: empleados || null,
+                fecha: fecha,
+                hora: hora,
+                servicio: servicio
+              },
+              status: "pendiente",
+              idCita: idCita
+            };
+
+            const markdown = `| Campo | Detalle |\n|:------|:--------|\n| Nombre | ${nombre} |\n| Teléfono | ${telefono || 'N/A'} |\n| Industria | ${industria || 'N/A'} |\n| Solicitudes semanales | ${solicitudes || 'N/A'} |\n| Empleados | ${empleados || 'N/A'} |\n| Fecha | ${fecha} |\n| Hora | ${hora} |\n| Servicio | ${servicio} |\n| Estado | Pendiente |\n| ID Cita | ${idCita} |\n`;
+            
+            const desc = `🌟 ¡Hola ${nombre}! Su **cita ha sido registrada exitosamente**.\n\n📅 Detalles de su cita:\n• 📌 Industria: ${industria || 'N/A'}\n• 🛠️ Solicitudes promedio por semana: ${solicitudes || 'N/A'}\n• 👥 Número de empleados: ${empleados || 'N/A'}\n• 🗓️ Fecha de la cita: ${fecha} a las ${hora} hrs\n• 📞 Tipo de servicio: ${servicio}\n\n✅ Su ID de reserva es **${idCita}**. Nuestro equipo se pondrá en contacto con usted para confirmar los detalles. ¡Gracias por confiar en nosotros!`;
+
             return res.status(201).json({
-                estado: 'agendada',
-                mensaje: 'Cita confirmada exitosamente.',
-                detalles: { nombre, fecha, hora, servicio }
+                raw,
+                markdown,
+                type: "markdown",
+                desc
             });
         } else {
              return res.status(500).json({
@@ -193,34 +196,24 @@ app.post('/api/citas/agendar', async (req, res) => {
                 mensaje: 'No se pudo guardar la cita en la hoja de cálculo. Intente de nuevo.'
             });
         }
-    }
-
-    // Si hay conflicto, encontrar y sugerir horarios disponibles
-    else {
+    } else {
         const horariosDisponibles = [];
         const inicioJornada = new Date(`${fecha}T09:00:00`);
         const finJornada = new Date(`${fecha}T18:00:00`);
-
         let tiempoPrueba = new Date(inicioJornada);
 
         while (tiempoPrueba < finJornada) {
             const finTiempoPrueba = new Date(tiempoPrueba.getTime() + duracionMinutos * 60000);
-            
-            // El horario no debe terminar después del fin de la jornada
-            if (finTiempoPrueba > finJornada) {
-                break;
-            }
+            if (finTiempoPrueba > finJornada) break;
 
             let slotDisponible = true;
             for (const cita of citasExistentes) {
-                const fechaExistente = cita[5];
-                const horaExistente = cita[6];
-                const servicioExistente = cita[7];
-
-                if (!fechaExistente || !horaExistente || !servicioExistente) continue;
-
-                // Solo nos importan las citas del mismo día para la sugerencia
+                const fechaExistente = cita[6];
                 if (fechaExistente !== fecha) continue;
+                
+                const horaExistente = cita[7];
+                const servicioExistente = cita[8];
+                if (!horaExistente || !servicioExistente) continue;
 
                 const duracionExistente = servicioExistente.toLowerCase() === 'cita' ? 60 : 30;
                 const inicioExistente = new Date(`${fechaExistente}T${horaExistente}:00`);
@@ -231,12 +224,9 @@ app.post('/api/citas/agendar', async (req, res) => {
                     break;
                 }
             }
-
             if (slotDisponible) {
                 horariosDisponibles.push(tiempoPrueba.toTimeString().substring(0, 5));
             }
-
-            // Avanzamos en intervalos de 30 minutos para no omitir posibles slots
             tiempoPrueba.setMinutes(tiempoPrueba.getMinutes() + 30);
         }
 
@@ -256,7 +246,6 @@ app.post('/api/citas/agendar', async (req, res) => {
   }
 });
 
-
 // --- Manejo de errores y 404 ---
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -269,12 +258,7 @@ app.use((err, req, res, next) => {
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
-    error: 'Endpoint no encontrado',
-    availableEndpoints: {
-      'citas': [
-        'POST /api/citas/agendar'
-      ]
-    }
+    error: 'Endpoint no encontrado'
   });
 });
 
