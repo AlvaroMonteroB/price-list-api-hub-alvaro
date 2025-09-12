@@ -99,84 +99,151 @@ app.get('/', (req, res) => {
 });
 
 app.post('/api/citas/agendar', async (req, res) => {
-    try {
-        const {
-            nombre, telefono, industria, solicitudes, empleados,
-            fecha, hora, servicio, notas
-        } = req.body;
+  try {
+    const {
+        nombre,
+        telefono,
+        industria,
+        solicitudes,
+        empleados,
+        fecha,
+        hora,
+        servicio,
+        notas
+    } = req.body;
 
-        if (!nombre || !fecha || !hora || !servicio) {
-            // ... (validación se mantiene igual)
+    if (!nombre || !fecha || !hora || !servicio) {
+      return res.status(400).json({
+        estado: 'error',
+        mensaje: 'Faltan campos requeridos: nombre, fecha, hora y servicio son obligatorios.'
+      });
+    }
+
+    const duracionMinutos = servicio.toLowerCase() === 'cita' ? 60 : 30;
+    const fechaHoraSolicitada = new Date(`${fecha}T${hora}:00`);
+    const fechaHoraFinSolicitada = new Date(fechaHoraSolicitada.getTime() + duracionMinutos * 60000);
+
+    const citasExistentes = await obtenerCitas();
+    let hayConflicto = false;
+
+    for (const cita of citasExistentes) {
+        // Asumiendo que ahora la fecha está en la columna G (índice 6) y la hora en H (índice 7)
+        const fechaExistente = cita[6];
+        const horaExistente = cita[7];
+        const servicioExistente = cita[8];
+
+        if (!fechaExistente || !horaExistente || !servicioExistente) continue;
+
+        const duracionExistente = servicioExistente.toLowerCase() === 'cita' ? 60 : 30;
+        const inicioExistente = new Date(`${fechaExistente}T${horaExistente}:00`);
+        const finExistente = new Date(inicioExistente.getTime() + duracionExistente * 60000);
+
+        if (fechaHoraSolicitada < finExistente && fechaHoraFinSolicitada > inicioExistente) {
+            hayConflicto = true;
+            break;
         }
+    }
+    
+    if (!hayConflicto) {
+        // 1. Generar ID único para la cita
+        const idCita = `APT-${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
 
-        const duracionMinutos = servicio.toLowerCase() === 'cita' ? 60 : 30;
-        const fechaHoraSolicitada = new Date(`${fecha}T${hora}:00`);
-        // Validar que la fecha de entrada sea válida
-        if (isNaN(fechaHoraSolicitada.getTime())) {
-            return res.status(400).json({ estado: 'error', mensaje: 'El formato de fecha o hora proporcionado es inválido.' });
-        }
-        const fechaHoraFinSolicitada = new Date(fechaHoraSolicitada.getTime() + duracionMinutos * 60000);
-        
-        const citasExistentes = await obtenerCitas();
-        let hayConflicto = false;
+        const nuevaFila = [
+            idCita,
+            nombre,
+            telefono || '',
+            industria || '',
+            solicitudes || '',
+            empleados || '',
+            fecha,
+            hora,
+            servicio,
+            notas || ''
+        ];
 
-        for (const cita of citasExistentes) {
-            const fechaExistenteStr = cita[6];
-            const horaExistenteStr = cita[7];
-            const servicioExistente = cita[8];
+        const exito = await agregarFila(nuevaFila);
 
-            if (!fechaExistenteStr || !horaExistenteStr || !servicioExistente) continue;
+        if (exito) {
+            // 2. Construir el objeto de respuesta en el formato solicitado
+            const raw = {
+              appointmentDetails: {
+                nombre: nombre,
+                telefono: telefono || '',
+                industria: industria || '',
+                solicitudes: solicitudes || null,
+                empleados: empleados || null,
+                fecha: fecha,
+                hora: hora,
+                servicio: servicio
+              },
+              status: "pendiente",
+              idCita: idCita
+            };
 
-            // --- NUEVA LÓGICA DE PARSEO DE FECHA ROBUSTA ---
-            // Intenta normalizar la fecha a YYYY-MM-DD antes de crear el objeto Date
-            let parts = fechaExistenteStr.split(/[-/]/);
-            let isoDateStr;
-            if (parts.length === 3) {
-                // Si el primer segmento es > 31, asumimos que es el año (YYYY-MM-DD)
-                if (parseInt(parts[0], 10) > 31) {
-                    isoDateStr = `${parts[0]}-${parts[1]}-${parts[2]}`;
-                } else { // Asumimos DD-MM-YYYY o similar, lo reordenamos
-                    isoDateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
-                }
-            } else {
-                // Si el formato es inesperado, saltamos esta cita para evitar errores
-                console.warn(`Formato de fecha inesperado en la hoja: ${fechaExistenteStr}`);
-                continue;
-            }
+            const markdown = `| Campo | Detalle |\n|:------|:--------|\n| Nombre | ${nombre} |\n| Teléfono | ${telefono || 'N/A'} |\n| Industria | ${industria || 'N/A'} |\n| Solicitudes semanales | ${solicitudes || 'N/A'} |\n| Empleados | ${empleados || 'N/A'} |\n| Fecha | ${fecha} |\n| Hora | ${hora} |\n| Servicio | ${servicio} |\n| Estado | Pendiente |\n| ID Cita | ${idCita} |\n`;
+            
+            const desc = `🌟 ¡Hola ${nombre}! Su **cita ha sido registrada exitosamente**.\n\n📅 Detalles de su cita:\n• 📌 Industria: ${industria || 'N/A'}\n• 🛠️ Solicitudes promedio por semana: ${solicitudes || 'N/A'}\n• 👥 Número de empleados: ${empleados || 'N/A'}\n• 🗓️ Fecha de la cita: ${fecha} a las ${hora} hrs\n• 📞 Tipo de servicio: ${servicio}\n\n✅ Su ID de reserva es **${idCita}**. Nuestro equipo se pondrá en contacto con usted para confirmar los detalles. ¡Gracias por confiar en nosotros!`;
 
-            const inicioExistente = new Date(`${isoDateStr}T${horaExistenteStr}:00`);
-
-            // Si después de nuestro intento, la fecha sigue siendo inválida, la ignoramos.
-            if (isNaN(inicioExistente.getTime())) {
-                console.warn(`No se pudo interpretar la fecha: '${fechaExistenteStr}'. Saltando verificación para esta fila.`);
-                continue;
-            }
-            // --- FIN DE LA NUEVA LÓGICA ---
-
-            const duracionExistente = servicioExistente.toLowerCase() === 'cita' ? 60 : 30;
-            const finExistente = new Date(inicioExistente.getTime() + duracionExistente * 60000);
-
-            if (fechaHoraSolicitada < finExistente && fechaHoraFinSolicitada > inicioExistente) {
-                hayConflicto = true;
-                break;
-            }
-        }
-
-        if (hayConflicto) {
-            // ... (la lógica para sugerir horarios se mantiene igual)
-            return res.status(409).json({
-                estado: 'conflicto',
-                mensaje: `El horario de ${hora} no está disponible.`,
-                horariosSugeridos: [] // Aquí iría la lógica para sugerir
+            return res.status(201).json({
+                raw,
+                markdown,
+                type: "markdown",
+                desc
+            });
+        } else {
+             return res.status(500).json({
+                estado: 'error_guardado',
+                mensaje: 'No se pudo guardar la cita en la hoja de cálculo. Intente de nuevo.'
             });
         }
-        
-        // ... (el resto del código para agendar, la doble verificación y la respuesta se mantiene igual)
-        // ... (código para generar idCita, agregarFila, verificar carrera y responder con JSON)
+    } else {
+        const horariosDisponibles = [];
+        const inicioJornada = new Date(`${fecha}T09:00:00`);
+        const finJornada = new Date(`${fecha}T18:00:00`);
+        let tiempoPrueba = new Date(inicioJornada);
 
-    } catch (error) {
-        // ... (manejo de errores se mantiene igual)
+        while (tiempoPrueba < finJornada) {
+            const finTiempoPrueba = new Date(tiempoPrueba.getTime() + duracionMinutos * 60000);
+            if (finTiempoPrueba > finJornada) break;
+
+            let slotDisponible = true;
+            for (const cita of citasExistentes) {
+                const fechaExistente = cita[6];
+                if (fechaExistente !== fecha) continue;
+                
+                const horaExistente = cita[7];
+                const servicioExistente = cita[8];
+                if (!horaExistente || !servicioExistente) continue;
+
+                const duracionExistente = servicioExistente.toLowerCase() === 'cita' ? 60 : 30;
+                const inicioExistente = new Date(`${fechaExistente}T${horaExistente}:00`);
+                const finExistente = new Date(inicioExistente.getTime() + duracionExistente * 60000);
+
+                if (tiempoPrueba < finExistente && finTiempoPrueba > inicioExistente) {
+                    slotDisponible = false;
+                    break;
+                }
+            }
+            if (slotDisponible) {
+                horariosDisponibles.push(tiempoPrueba.toTimeString().substring(0, 5));
+            }
+            tiempoPrueba.setMinutes(tiempoPrueba.getMinutes() + 30);
+        }
+
+        return res.status(409).json({
+            estado: 'conflicto',
+            mensaje: `El horario de ${hora} no está disponible.`,
+            horariosSugeridos: horariosDisponibles
+        });
     }
+
+  } catch (error) {
+    console.error('Error en el endpoint de agendar cita:', error);
+    res.status(500).json({
+      estado: 'error_servidor',
+      mensaje: 'Ocurrió un error interno en el servidor.'
+    });
+  }
 });
 
 // --- Manejo de errores y 404 ---
