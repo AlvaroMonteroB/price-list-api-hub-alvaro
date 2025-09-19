@@ -1,9 +1,9 @@
 const express = require('express');
-const cors = require('cors');
+const cors = 'cors';
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { google } = require("googleapis");
-require('dotenv').config();
+require('dotenv').config(); // Asegúrate de tener YCLOUD_API_KEY y YCLOUD_TEMPLATE_NAME en tu .env
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,17 +31,72 @@ const auth = new google.auth.GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
-// --- NUEVO: Helper para respuestas estandarizadas ---
+// --- NUEVO: Helper para enviar mensaje de WhatsApp con YCloud ---
 /**
- * Envía una respuesta estandarizada en el formato { raw, markdown, type, desc }.
- * @param {object} res - El objeto de respuesta de Express.
- * @param {number} statusCode - El código de estado HTTP.
- * @param {string} title - Un título descriptivo (ej: "Error de Validación").
- * @param {object} rawData - El objeto de datos para el campo 'raw'.
+ * Envía una notificación de confirmación de cita a través de WhatsApp usando YCloud.
+ * @param {object} datosCita - Objeto con los detalles de la cita.
+ * @param {string} datosCita.nombre - Nombre del cliente.
+ * @param {string} datosCita.telefono - Número de teléfono del cliente (formato E.164).
+ * @param {string} datosCita.fecha - Fecha de la cita.
+ * @param {string} datosCita.hora - Hora de la cita.
+ * @param {string} datosCita.servicio - Servicio agendado.
+ * @param {string} datosCita.idCita - ID único de la cita.
  */
+async function enviarMensajeWhatsApp(datosCita) {
+    if (!process.env.YCLOUD_API_KEY || !process.env.YCLOUD_TEMPLATE_NAME) {
+        console.warn('ADVERTENCIA: Faltan las variables de entorno de YCloud. El mensaje de WhatsApp no será enviado.');
+        return;
+    }
+    if (!datosCita.telefono) {
+        console.warn(`ADVERTENCIA: No se proporcionó un número de teléfono para la cita ${datosCita.idCita}. El mensaje no será enviado.`);
+        return;
+    }
+
+    const url = 'https://api.ycloud.com/v2/whatsapp/messages';
+    const options = {
+        method: 'POST',
+        headers: {
+            'accept': 'application/json',
+            'content-type': 'application/json',
+            'X-API-Key': process.env.YCLOUD_API_KEY // Autenticación con la API Key
+        },
+        body: JSON.stringify({
+            recipientPhoneNumber: datosCita.telefono,
+            type: 'template',
+            template: {
+                name: process.env.YCLOUD_TEMPLATE_NAME,
+                language: 'es', // Asegúrate que coincida con el idioma de tu plantilla
+                components: [{
+                    type: 'body',
+                    parameters: [
+                        { type: 'text', text: datosCita.nombre },
+                        { type: 'text', text: datosCita.servicio },
+                        { type: 'text', text: datosCita.fecha },
+                        { type: 'text', text: datosCita.hora },
+                        { type: 'text', text: datosCita.idCita }
+                    ]
+                }]
+            }
+        })
+    };
+
+    try {
+        const response = await fetch(url, options);
+        const json = await response.json();
+        if (!response.ok) {
+            console.error('Error al enviar mensaje de WhatsApp (YCloud):', json);
+        } else {
+            console.log(`Mensaje de WhatsApp para la cita ${datosCita.idCita} enviado exitosamente a ${datosCita.telefono}.`);
+        }
+    } catch (err) {
+        console.error('Error crítico al intentar enviar el mensaje de WhatsApp:', err);
+    }
+}
+
+
+// --- Helper para respuestas estandarizadas ---
 const responder = (res, statusCode, title, rawData) => {
     let message = rawData.mensaje || 'Operación completada.';
-    // Formato especial para incluir sugerencias en el mensaje si existen
     if (rawData.sugerencias && rawData.sugerencias.length > 0) {
         message = `${message}\n\n**Horas alternativas sugeridas:**\n${rawData.sugerencias.join(', ')}`;
     } else if (rawData.sugerencias) {
@@ -110,9 +165,9 @@ app.use(rateLimit({
 // --- Rutas de la API ---
 app.get('/', (req, res) => {
     responder(res, 200, "API de Agendamiento de Citas", {
-        version: '1.1.0',
+        version: '1.2.0', // Versión actualizada
         endpoints: {
-          '/api/citas/agendar': 'POST - Crea una nueva cita, verificando disponibilidad.'
+          '/api/citas/agendar': 'POST - Crea una nueva cita y notifica por WhatsApp.'
         }
     });
 });
@@ -147,7 +202,6 @@ app.post('/api/citas/agendar', async (req, res) => {
     });
     
     if (hayConflicto) {
-        // Lógica para sugerir horarios
         const horariosDisponibles = [];
         const inicioJornada = new Date(`${fecha}T09:00:00`);
         const finJornada = new Date(`${fecha}T18:00:00`);
@@ -178,7 +232,6 @@ app.post('/api/citas/agendar', async (req, res) => {
         });
     }
 
-    // Si no hay conflicto, proceder a agendar
     const idCita = `APT-${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
     const nuevaFila = [idCita, nombre, telefono || '', industria || '', solicitudes || '', empleados || '', fecha, hora, servicio, notas || ''];
     const exito = await agregarFila(nuevaFila);
@@ -192,10 +245,15 @@ app.post('/api/citas/agendar', async (req, res) => {
         const markdown = `| Campo | Detalle |\n|:------|:--------|\n| Nombre | ${nombre} |\n| Teléfono | ${telefono || 'N/A'} |\n| Industria | ${industria || 'N/A'} |\n| Fecha | ${fecha} |\n| Hora | ${hora} |\n| ID Cita | ${idCita} |\n`;
         const desc = `🌟 ¡Hola ${nombre}! Su **cita ha sido registrada exitosamente**.\n\n📅 Detalles:\n• 📌 Industria: ${industria || 'N/A'}\n• 🗓️ Fecha: ${fecha} a las ${hora} hrs\n• ✅ ID: **${idCita}**`;
         
-        // Esta es la única respuesta que no usa el helper porque su estructura es muy específica y ya es correcta.
+        // --- INICIO DE LA MODIFICACIÓN ---
+        // Llamada a la función para enviar el mensaje de WhatsApp.
+        // No usamos await para no bloquear la respuesta al cliente.
+        enviarMensajeWhatsApp({ nombre, telefono, fecha, hora, servicio, idCita })
+            .catch(err => console.error("Fallo en la ejecución de enviarMensajeWhatsApp:", err));
+        // --- FIN DE LA MODIFICACIÓN ---
+
         return res.status(201).json({ raw, markdown, type: "markdown", desc });
     } else {
-        // Este error ahora es manejado por el catch block al usar `throw new Error`.
         throw new Error('No se pudo guardar la cita en la hoja de cálculo. Intente de nuevo.');
     }
 
