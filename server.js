@@ -1,5 +1,5 @@
 const express = require('express');
-const cors = 'cors';
+const cors = require ('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { google } = require("googleapis");
