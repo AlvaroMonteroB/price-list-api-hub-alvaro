@@ -6,6 +6,7 @@ const { google } = require("googleapis");
 require('dotenv').config(); // Asegúrate de tener YCLOUD_API_KEY y YCLOUD_TEMPLATE_NAME en tu .env
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 
 // --- Configuración de Google Sheets ---
