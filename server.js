@@ -71,7 +71,23 @@ async function enviarCorreoConfirmacion(datosCita) {
         from: process.env.EMAIL_USER,
         to: recipientEmail, // El destinatario ahora es fijo
         subject: `Nueva Cita Agendada: ${datosCita.nombre} - ${datosCita.servicio}`,
-        text:"Hola"
+        html: `
+            <div style="font-family: Arial, sans-serif; color: #333;">
+                <h2>¡Nueva Cita Registrada!</h2>
+                <p>Se ha agendado una nueva cita con los siguientes detalles:</p>
+                <ul style="list-style-type: none; padding: 0;">
+                    <li><strong>Nombre:</strong> ${datosCita.nombre}</li>
+                    <li><strong>Teléfono:</strong> ${datosCita.telefono || 'No proporcionado'}</li>
+                    <li><strong>Servicio:</strong> ${datosCita.servicio}</li>
+                    <li><strong>Fecha:</strong> ${datosCita.fecha}</li>
+                    <li><strong>Hora:</strong> ${datosCita.hora}</li>
+                    <li><strong>ID de Cita:</strong> ${datosCita.idCita}</li>
+                    <li><strong>Industria:</strong> ${datosCita.industria || 'N/A'}</li>
+                    <li><strong>Notas:</strong> ${datosCita.notas || 'N/A'}</li>
+                </ul>
+                <p>La cita ha sido guardada en Google Sheets.</p>
+            </div>
+        `
     };
 
     try {
