@@ -1,3 +1,4 @@
+require('dotenv').config(); 
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -15,11 +16,18 @@ const PORT = process.env.PORT || 3000;
 // Usaremos Gmail como ejemplo. ¡Asegúrate de configurar esto en tu .env!
 
 const transporter = nodemailer.createTransport({
-  host: "gmail",
+  service: 'gmail',
   auth: {
-    user: "juandyna43@gmail.com",
-    pass: "bjdepjibtmylrrng",
-  },
+    user: process.env.EMAIL_USER || 'tuemail@gmail.com',
+    pass: process.env.EMAIL_PASS || 'tu_contraseña_de_aplicacion'
+  }
+});
+transporter.verify((error, success) => {
+  if (error) {
+    console.log('❌ Error conectando con Gmail:', error);
+  } else {
+    console.log('✅ Conexión con Gmail establecida correctamente');
+  }
 });
 
 
