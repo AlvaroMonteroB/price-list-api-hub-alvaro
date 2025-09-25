@@ -45,50 +45,47 @@ const auth = new google.auth.GoogleAuth({
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
-// --- NUEVO HELPER: Enviar Correo de Confirmación con Nodemailer ---
+// --- HELPER MODIFICADO: Enviar Correo a un Destinatario Fijo ---
 /**
- * Envía un correo electrónico de confirmación de cita.
+ * Envía un correo electrónico de notificación de nueva cita a un destinatario predefinido.
  * @param {object} datosCita - Objeto con los detalles de la cita.
- * @param {string} datosCita.email - Correo electrónico del destinatario.
- * @param {string} datosCita.nombre - Nombre del cliente.
- * @param {string} datosCita.fecha - Fecha de la cita.
- * @param {string} datosCita.hora - Hora de la cita.
- * @param {string} datosCita.servicio - Servicio agendado.
- * @param {string} datosCita.idCita - ID único de la cita.
  */
 async function enviarCorreoConfirmacion(datosCita) {
-    if (!datosCita.email) {
-        console.warn(`ADVERTENCIA: No se proporcionó un email para la cita ${datosCita.idCita}. El correo no será enviado.`);
+    const recipientEmail = process.env.RECIPIENT_EMAIL;
+    if (!recipientEmail) {
+        console.warn(`ADVERTENCIA: La variable de entorno RECIPIENT_EMAIL no está definida. El correo no será enviado.`);
         return;
     }
 
     // Contenido del correo en HTML para un formato más atractivo
     const mailOptions = {
         from: `"Tu Sistema de Citas" <${process.env.EMAIL_USER}>`,
-        to: datosCita.email,
-        subject: `Confirmación de Cita: ${datosCita.servicio}`,
+        to: recipientEmail, // El destinatario ahora es fijo
+        subject: `Nueva Cita Agendada: ${datosCita.nombre} - ${datosCita.servicio}`,
         html: `
             <div style="font-family: Arial, sans-serif; color: #333;">
-                <h2>¡Hola ${datosCita.nombre}!</h2>
-                <p>Tu cita ha sido registrada exitosamente.</p>
-                <p>Aquí están los detalles:</p>
+                <h2>¡Nueva Cita Registrada!</h2>
+                <p>Se ha agendado una nueva cita con los siguientes detalles:</p>
                 <ul style="list-style-type: none; padding: 0;">
+                    <li><strong>Nombre:</strong> ${datosCita.nombre}</li>
+                    <li><strong>Teléfono:</strong> ${datosCita.telefono || 'No proporcionado'}</li>
                     <li><strong>Servicio:</strong> ${datosCita.servicio}</li>
                     <li><strong>Fecha:</strong> ${datosCita.fecha}</li>
                     <li><strong>Hora:</strong> ${datosCita.hora}</li>
                     <li><strong>ID de Cita:</strong> ${datosCita.idCita}</li>
+                    <li><strong>Industria:</strong> ${datosCita.industria || 'N/A'}</li>
+                    <li><strong>Notas:</strong> ${datosCita.notas || 'N/A'}</li>
                 </ul>
-                <p>Si necesitas reagendar o cancelar, por favor contáctanos.</p>
-                <p>¡Te esperamos!</p>
+                <p>La cita ha sido guardada en Google Sheets.</p>
             </div>
         `,
     };
 
     try {
         await transporter.sendMail(mailOptions);
-        console.log(`Correo de confirmación para la cita ${datosCita.idCita} enviado a ${datosCita.email}.`);
+        console.log(`Correo de notificación para la cita ${datosCita.idCita} enviado a ${recipientEmail}.`);
     } catch (error) {
-        console.error('Error al enviar el correo de confirmación:', error);
+        console.error('Error al enviar el correo de notificación:', error);
     }
 }
 
@@ -122,7 +119,7 @@ async function obtenerCitas() {
         const sheets = google.sheets({ version: "v4", auth: client });
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SHEET_ID_CITAS,
-            range: `${SHEET_NAME_CITAS}!A:K`, // Ampliamos el rango para incluir la columna de email
+            range: `${SHEET_NAME_CITAS}!A:J`, // Rango original de 10 columnas
         });
         const rows = response.data.values || [];
         return rows.length > 1 ? rows.slice(1) : [];
@@ -138,7 +135,7 @@ async function agregarFila(valores) {
         const sheets = google.sheets({ version: "v4", auth: client });
         await sheets.spreadsheets.values.append({
             spreadsheetId: SHEET_ID_CITAS,
-            range: `${SHEET_NAME_CITAS}!A:K`, // Ampliamos el rango
+            range: `${SHEET_NAME_CITAS}!A:J`, // Rango original de 10 columnas
             valueInputOption: "USER_ENTERED",
             insertDataOption: "INSERT_ROWS",
             requestBody: { values: [valores] },
@@ -164,21 +161,21 @@ app.use(rateLimit({
 // --- Rutas de la API ---
 app.get('/', (req, res) => {
     responder(res, 200, "API de Agendamiento de Citas", {
-        version: '1.3.0 (Nodemailer)',
+        version: '1.4.0 (Nodemailer Fijo)',
         endpoints: {
-            '/api/citas/agendar': 'POST - Crea una nueva cita y notifica por Correo Electrónico.'
+            '/api/citas/agendar': 'POST - Crea una nueva cita y notifica por Correo Electrónico a un destinatario fijo.'
         }
     });
 });
 
 app.post('/api/citas/agendar', async (req, res) => {
     try {
-        // Añadimos 'email' al destructuring
-        const { nombre, email, telefono, industria, solicitudes, empleados, fecha, hora, servicio, notas } = req.body;
+        // Se elimina 'email' del destructuring
+        const { nombre, telefono, industria, solicitudes, empleados, fecha, hora, servicio, notas } = req.body;
 
-        if (!nombre || !fecha || !hora || !servicio || !email) {
+        if (!nombre || !fecha || !hora || !servicio) {
             return responder(res, 400, "Error de Validación", {
-                mensaje: 'Faltan campos requeridos: nombre, email, fecha, hora y servicio son obligatorios.'
+                mensaje: 'Faltan campos requeridos: nombre, fecha, hora y servicio son obligatorios.'
             });
         }
 
@@ -193,7 +190,8 @@ app.post('/api/citas/agendar', async (req, res) => {
 
         const citasExistentes = await obtenerCitas();
         const hayConflicto = citasExistentes.some(cita => {
-            const [, , , , , , , fechaExistente, horaExistente, servicioExistente] = cita;
+            // Índices ajustados a la estructura de 10 columnas
+            const [, , , , , , fechaExistente, horaExistente, servicioExistente] = cita;
             if (!fechaExistente || !horaExistente) return false;
             const inicioExistente = new Date(`${fechaExistente}T${horaExistente}:00`);
             const duracionExistente = (servicioExistente || '').toLowerCase() === 'cita' ? 60 : 30;
@@ -210,21 +208,21 @@ app.post('/api/citas/agendar', async (req, res) => {
         }
 
         const idCita = `APT-${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
-        // Actualizamos la fila para incluir el email
-        const nuevaFila = [idCita, nombre, email, telefono || '', industria || '', solicitudes || '', empleados || '', fecha, hora, servicio, notas || ''];
+        // Fila vuelve a la estructura original de 10 columnas
+        const nuevaFila = [idCita, nombre, telefono || '', industria || '', solicitudes || '', empleados || '', fecha, hora, servicio, notas || ''];
         const exito = await agregarFila(nuevaFila);
 
         if (exito) {
             const raw = {
-                appointmentDetails: { nombre, email, telefono: telefono || '', industria: industria || '', solicitudes: solicitudes || null, empleados: empleados || null, fecha, hora, servicio },
+                appointmentDetails: { nombre, telefono: telefono || '', industria: industria || '', solicitudes: solicitudes || null, empleados: empleados || null, fecha, hora, servicio },
                 status: "pendiente",
                 idCita
             };
-            const markdown = `| Campo | Detalle |\n|:------|:--------|\n| Nombre | ${nombre} |\n| Email | ${email} |\n| Fecha | ${fecha} |\n| Hora | ${hora} |\n| ID Cita | ${idCita} |\n`;
-            const desc = `🌟 ¡Hola ${nombre}! Su **cita ha sido registrada exitosamente**. Se ha enviado un correo de confirmación a ${email}.`;
+            const markdown = `| Campo | Detalle |\n|:------|:--------|\n| Nombre | ${nombre} |\n| Teléfono | ${telefono || 'N/A'} |\n| Fecha | ${fecha} |\n| Hora | ${hora} |\n| ID Cita | ${idCita} |\n`;
+            const desc = `🌟 ¡Hola ${nombre}! Su **cita ha sido registrada exitosamente**. Se ha enviado una notificación.`;
 
-            // --- CAMBIO: Llamamos a la función de enviar correo ---
-            enviarCorreoConfirmacion({ nombre, email, fecha, hora, servicio, idCita })
+            // --- CAMBIO: Llamamos a la función de enviar correo con todos los datos ---
+            enviarCorreoConfirmacion({ nombre, telefono, industria, solicitudes, empleados, fecha, hora, servicio, notas, idCita })
                 .catch(err => console.error("Fallo en la ejecución de enviarCorreoConfirmacion:", err));
 
             return res.status(201).json({ raw, markdown, type: "markdown", desc });
@@ -262,3 +260,4 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+
