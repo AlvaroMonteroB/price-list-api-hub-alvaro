@@ -13,12 +13,15 @@ const PORT = process.env.PORT || 3000;
 // --- Configuración de Nodemailer ---
 // Creamos un "transporter" que se encargará de enviar los correos.
 // Usaremos Gmail como ejemplo. ¡Asegúrate de configurar esto en tu .env!
+
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.EMAIL_USER, // Tu correo de Gmail
-        pass: process.env.EMAIL_PASS, // Tu contraseña de aplicación de Gmail
-    },
+  host: "gmail",
+  port: 587,
+  secure: false, // upgrade later with STARTTLS
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
 });
 
 
