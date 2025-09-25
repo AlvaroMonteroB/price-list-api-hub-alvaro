@@ -59,7 +59,7 @@ async function enviarCorreoConfirmacion(datosCita) {
 
     // Contenido del correo en HTML para un formato más atractivo
     const mailOptions = {
-        from: `"Tu Sistema de Citas" <${process.env.EMAIL_USER}>`,
+        from: `${process.env.EMAIL_USER}`,
         to: recipientEmail, // El destinatario ahora es fijo
         subject: `Nueva Cita Agendada: ${datosCita.nombre} - ${datosCita.servicio}`,
         html: `
