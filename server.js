@@ -87,7 +87,7 @@ async function enviarCorreoConfirmacion(datosCita) {
                 </ul>
                 <p>La cita ha sido guardada en Google Sheets.</p>
             </div>
-        `,
+        `
     };
 
     try {
