@@ -16,11 +16,9 @@ const PORT = process.env.PORT || 3000;
 
 const transporter = nodemailer.createTransport({
   host: "gmail",
-  port: 587,
-  secure: false, // upgrade later with STARTTLS
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: "juandyna43@gmail.com",
+    pass: "bjdepjibtmylrrng",
   },
 });
 
@@ -62,7 +60,7 @@ async function enviarCorreoConfirmacion(datosCita) {
 
     // Contenido del correo en HTML para un formato más atractivo
     const mailOptions = {
-        from: `${process.env.EMAIL_USER}`,
+        from: process.env.EMAIL_USER,
         to: recipientEmail, // El destinatario ahora es fijo
         subject: `Nueva Cita Agendada: ${datosCita.nombre} - ${datosCita.servicio}`,
         html: `
